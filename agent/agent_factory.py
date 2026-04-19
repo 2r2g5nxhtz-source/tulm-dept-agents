@@ -13,7 +13,14 @@ from langchain_core.messages import SystemMessage
 
 from db.postgres_utils import create_memory_store
 
-from agent.prompts import MEMORY_SYSTEM_PROMPT
+import os as _os
+from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT
+
+_DEPT_PROMPTS = {
+    "finance": FINANCE_SYSTEM_PROMPT,
+    "ves": VES_SYSTEM_PROMPT,
+}
+MEMORY_SYSTEM_PROMPT = _DEPT_PROMPTS.get(_os.getenv("DEPT_MODE", "finance"), FINANCE_SYSTEM_PROMPT)
 
 logger = logging.getLogger(__name__)
 
