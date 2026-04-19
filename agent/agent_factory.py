@@ -9,7 +9,7 @@ from langgraph.graph import StateGraph
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langmem import create_manage_memory_tool
 from langgraph.prebuilt import create_react_agent
-from langgraph.utils.config import get_store
+from langchain_core.messages import SystemMessage
 
 from db.postgres_utils import create_memory_store
 
@@ -53,65 +53,31 @@ class AgentFactory:
         # Use user_id as namespace (no fallback to "memories")
         namespace = (str(user_id),)
         
-        # Create a closure that captures user_id
-        async def user_specific_prompt(state: Dict[str, Any]) -> list:
-            """Generate system prompt with memory context using captured user_id
-            
-            Args:
-                state: Current conversation state
-                
-            Returns:
-                List of messages with system prompt and user messages
-            """
-            nonlocal user_id, store
-            
-            logger.info(f"Using captured user_id: {user_id}")
-            
-            # Use the captured user_id directly - no need to extract from state
-            namespace = (str(user_id),)
-            
-            logger.info(f"Searching memories with namespace={namespace}, user_id={user_id}")
-            
-            try:
-                # Search for memories using the async search method
-                memories = await store.asearch(
-                    namespace,
-                    query=state["messages"][-1].content,
-                    limit=10  # Number of memories to retrieve
-                )
-                
-                logger.info(f"Found {len(memories) if memories else 0} memories for namespace={namespace}")
-                
-                # Format the memories for display with better error handling
-                if memories:
-                    memory_items = []
-                    for item in memories:
-                        try:
-                            if hasattr(item, 'value') and isinstance(item.value, dict):
-                                content = item.value.get('content', 'No content available')
-                                memory_items.append(f"- {content}")
-                            else:
-                                logger.warning(f"Unexpected memory item format: {type(item)}")
-                        except Exception as e:
-                            logger.error(f"Error processing memory item: {str(e)}")
-                    
-                    memory_content = "\n".join(memory_items)
-                else:
-                    memory_content = ""
-                    
-                logger.info(f"Memory content length: {len(memory_content)}")
-            except Exception as e:
-                logger.error(f"Error retrieving memories: {str(e)}")
-                memory_content = ""
-            
-            return [
-                {"role": "system", "content": MEMORY_SYSTEM_PROMPT.format(memory_content=memory_content)},
-                *state["messages"]
-            ]
+        # Simple system prompt — inject as SystemMessage prepended to messages
+        system_prompt = MEMORY_SYSTEM_PROMPT.format(memory_content="")
         
+        # LLM via OpenRouter (openai-compatible) or Anthropic directly
+        import os
+        from langchain_openai import ChatOpenAI
+        from langchain_anthropic import ChatAnthropic
+
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        openai_base_url = os.getenv("OPENAI_BASE_URL", "")
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+
+        if anthropic_key and "openrouter" not in openai_base_url:
+            llm = ChatAnthropic(model=llm_model, api_key=anthropic_key)
+        else:
+            # OpenRouter via OpenAI-compatible endpoint
+            llm = ChatOpenAI(
+                model=llm_model,
+                base_url=openai_base_url or "https://openrouter.ai/api/v1",
+                api_key=openrouter_key or os.getenv("OPENAI_API_KEY"),
+            )
+
         return create_react_agent(
-            f"openai:{llm_model}",
-            prompt=user_specific_prompt,  # Use the closure instead of the class method
+            llm,
+            prompt=system_prompt,
             tools=[create_manage_memory_tool(namespace=namespace)],
             checkpointer=checkpointer,
             store=store

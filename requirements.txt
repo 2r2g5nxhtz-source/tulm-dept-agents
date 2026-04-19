@@ -13,3 +13,9 @@ psycopg-pool
 langchain_postgres
 redis
 watchdog
+langchain-anthropic
+langchain-google-genai
+litellm
+mem0ai
+llama-index-core
+llama-index-vector-stores-postgres
