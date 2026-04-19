@@ -15,6 +15,7 @@ from db.postgres_utils import create_memory_store
 
 import os as _os
 from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT
+from agent.contract_tool import search_contracts, get_contracts_stats
 
 _DEPT_PROMPTS = {
     "finance": FINANCE_SYSTEM_PROMPT,
@@ -85,7 +86,7 @@ class AgentFactory:
         return create_react_agent(
             llm,
             prompt=system_prompt,
-            tools=[create_manage_memory_tool(namespace=namespace)],
+            tools=[create_manage_memory_tool(namespace=namespace), search_contracts, get_contracts_stats],
             checkpointer=checkpointer,
             store=store
         )
