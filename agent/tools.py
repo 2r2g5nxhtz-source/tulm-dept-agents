@@ -1,29 +1,31 @@
 import psycopg2
 import os
-from langchain_core.tools import tool
 
-@tool
-def search_contracts(query: str) -> str:
-    """Поиск договоров ТЛЦТ по названию компании, номеру договора или имени директора.
-    Используй когда спрашивают о конкретной компании, договоре или партнёре."""
+def search_contracts(query: str, limit: int = 5) -> str:
+    """Поиск договоров по компании, номеру или директору"""
     try:
         conn = psycopg2.connect(os.getenv('PG_CONNECTION_STRING'))
         cur = conn.cursor()
+        
         cur.execute("""
             SELECT number, date, company, director, status, type, currency, phone
             FROM contracts
-            WHERE
+            WHERE 
                 LOWER(company) LIKE LOWER(%s) OR
                 LOWER(number) LIKE LOWER(%s) OR
                 LOWER(director) LIKE LOWER(%s)
-            ORDER BY id LIMIT 5
-        """, (f'%{query}%', f'%{query}%', f'%{query}%'))
+            ORDER BY id
+            LIMIT %s
+        """, (f'%{query}%', f'%{query}%', f'%{query}%', limit))
+        
         rows = cur.fetchall()
         cur.close()
         conn.close()
+        
         if not rows:
-            return f"Договоры по '{query}' не найдены в реестре ТЛЦТ."
-        result = f"Найдено {len(rows)} договор(ов) по '{query}':\n\n"
+            return f"Договоры по запросу '{query}' не найдены в реестре."
+        
+        result = f"Найдено: {len(rows)} договор(ов) по '{query}'\n\n"
         for r in rows:
             result += f"№{r[0]} от {r[1]}\n"
             result += f"  Компания: {r[2]}\n"
@@ -33,15 +35,12 @@ def search_contracts(query: str) -> str:
                 result += f"  Тел: {r[7]}\n"
             result += "\n"
         return result
+        
     except Exception as e:
         return f"Ошибка поиска: {e}"
 
-@tool
 def search_contracts_filtered(contract_type: str = "", currency: str = "") -> str:
-    """Перекрёстный поиск договоров ТЛЦТ по типу договора и/или валюте.
-    Используй когда спрашивают: 'ЖД договоры в манатах', 'автомобильные в USD', 'все договоры типа ЖД' и т.п.
-    contract_type: тип договора (например: ЖД, автомобильный, морской, авиа)
-    currency: валюта (например: TMT, USD, EUR)"""
+    """Перекрёстный поиск договоров по типу и/или валюте (например: ЖД + TMT)"""
     try:
         conn = psycopg2.connect(os.getenv('PG_CONNECTION_STRING'))
         cur = conn.cursor()
@@ -69,7 +68,6 @@ def search_contracts_filtered(contract_type: str = "", currency: str = "") -> st
 
         rows = cur.fetchall()
 
-        # Считаем общее количество по фильтру
         cur.execute(f"SELECT COUNT(*) FROM contracts WHERE {where_clause}", params)
         total = cur.fetchone()[0]
 
@@ -100,26 +98,34 @@ def search_contracts_filtered(contract_type: str = "", currency: str = "") -> st
                 result += f"  Тел: {r[7]}\n"
             result += "\n"
         return result
+
     except Exception as e:
         return f"Ошибка поиска: {e}"
 
-@tool
 def get_contracts_stats() -> str:
-    """Статистика по реестру договоров ТЛЦТ — общее количество, по типам и статусам."""
+    """Статистика по реестру договоров"""
     try:
         conn = psycopg2.connect(os.getenv('PG_CONNECTION_STRING'))
         cur = conn.cursor()
+        
         cur.execute("SELECT COUNT(*) FROM contracts")
         total = cur.fetchone()[0]
+        
         cur.execute("SELECT status, COUNT(*) FROM contracts GROUP BY status ORDER BY COUNT(*) DESC")
         statuses = cur.fetchall()
-        cur.execute("SELECT type, COUNT(*) FROM contracts GROUP BY type ORDER BY COUNT(*) DESC LIMIT 7")
+        
+        cur.execute("SELECT type, COUNT(*) FROM contracts GROUP BY type ORDER BY COUNT(*) DESC LIMIT 6")
         types = cur.fetchall()
+        
         cur.execute("SELECT currency, COUNT(*) FROM contracts GROUP BY currency ORDER BY COUNT(*) DESC")
         currencies = cur.fetchall()
+        
         cur.close()
         conn.close()
-        result = f"📊 Реестр договоров ТЛЦТ\n\nВсего: {total}\n\nПо статусу:\n"
+        
+        result = f"📊 Реестр договоров ТЛЦТ\n\n"
+        result += f"Всего: {total} договоров\n\n"
+        result += "По статусу:\n"
         for s, c in statuses:
             result += f"  {s}: {c}\n"
         result += "\nПо типу:\n"
@@ -129,5 +135,6 @@ def get_contracts_stats() -> str:
         for c, n in currencies:
             result += f"  {c}: {n}\n"
         return result
+        
     except Exception as e:
         return f"Ошибка: {e}"
