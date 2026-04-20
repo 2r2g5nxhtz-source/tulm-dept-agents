@@ -14,12 +14,13 @@ from langchain_core.messages import SystemMessage
 from db.postgres_utils import create_memory_store
 
 import os as _os
-from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT
+from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT, RAILWAY_SYSTEM_PROMPT
 from agent.contract_tool import search_contracts, get_contracts_stats, search_contracts_filtered
 
 _DEPT_PROMPTS = {
     "finance": FINANCE_SYSTEM_PROMPT,
     "ves": VES_SYSTEM_PROMPT,
+    "railway": RAILWAY_SYSTEM_PROMPT,
 }
 MEMORY_SYSTEM_PROMPT = _DEPT_PROMPTS.get(_os.getenv("DEPT_MODE", "finance"), FINANCE_SYSTEM_PROMPT)
 

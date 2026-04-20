@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  finance-bot:
+    build: .
+    env_file: .env
+    environment:
+      - PG_CONNECTION_STRING=postgresql://finbot:finbot2026@postgres-finance:5432/finbot_db
+      - REDIS_URL=redis://redis-finance:6379/0
+    depends_on:
+      postgres-finance:
+        condition: service_healthy
+      redis-finance:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - finance-net
+
+  postgres-finance:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=finbot
+      - POSTGRES_PASSWORD=finbot2026
+      - POSTGRES_DB=finbot_db
+    volumes:
+      - postgres-finance-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - finance-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finbot -d finbot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-finance:
+    image: redis:7-alpine
+    volumes:
+      - redis-finance-data:/data
+    restart: unless-stopped
+    networks:
+      - finance-net
+
+  ves-bot:
+    build: .
+    env_file: .env.ves
+    environment:
+      - PG_CONNECTION_STRING=postgresql://vesbot:vesbot2026@postgres-ves:5432/vesbot_db
+      - REDIS_URL=redis://redis-ves:6379/0
+    depends_on:
+      postgres-ves:
+        condition: service_healthy
+      redis-ves:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - ves-net
+
+  postgres-ves:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=vesbot
+      - POSTGRES_PASSWORD=vesbot2026
+      - POSTGRES_DB=vesbot_db
+    volumes:
+      - postgres-ves-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - ves-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vesbot -d vesbot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-ves:
+    image: redis:7-alpine
+    volumes:
+      - redis-ves-data:/data
+    restart: unless-stopped
+    networks:
+      - ves-net
+
+  railway-bot:
+    build: .
+    env_file: .env.railway
+    environment:
+      - PG_CONNECTION_STRING=postgresql://railbot:railbot2026@postgres-railway:5432/railbot_db
+      - REDIS_URL=redis://redis-railway:6379/0
+      - DEPT_MODE=railway
+    depends_on:
+      postgres-railway:
+        condition: service_healthy
+      redis-railway:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - railway-net
+
+  postgres-railway:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=railbot
+      - POSTGRES_PASSWORD=railbot2026
+      - POSTGRES_DB=railbot_db
+    volumes:
+      - postgres-railway-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - railway-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U railbot -d railbot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-railway:
+    image: redis:7-alpine
+    volumes:
+      - redis-railway-data:/data
+    restart: unless-stopped
+    networks:
+      - railway-net
+
+networks:
+  finance-net:
+    driver: bridge
+  ves-net:
+    driver: bridge
+  railway-net:
+    driver: bridge
+
+volumes:
+  postgres-finance-data:
+  redis-finance-data:
+  postgres-ves-data:
+  redis-ves-data:
+  postgres-railway-data:
+  redis-railway-data:
