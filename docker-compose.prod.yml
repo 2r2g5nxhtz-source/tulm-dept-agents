@@ -122,12 +122,55 @@ services:
     networks:
       - railway-net
 
+  maritime-bot:
+    build: .
+    env_file: .env.maritime
+    environment:
+      - PG_CONNECTION_STRING=postgresql://maritimebot:maritime2026@postgres-maritime:5432/maritime_db
+      - REDIS_URL=redis://redis-maritime:6379/0
+      - DEPT_MODE=maritime
+    depends_on:
+      postgres-maritime:
+        condition: service_healthy
+      redis-maritime:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - maritime-net
+
+  postgres-maritime:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=maritimebot
+      - POSTGRES_PASSWORD=maritime2026
+      - POSTGRES_DB=maritime_db
+    volumes:
+      - postgres-maritime-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - maritime-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maritimebot -d maritime_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-maritime:
+    image: redis:7-alpine
+    volumes:
+      - redis-maritime-data:/data
+    restart: unless-stopped
+    networks:
+      - maritime-net
+
 networks:
   finance-net:
     driver: bridge
   ves-net:
     driver: bridge
   railway-net:
+    driver: bridge
+  maritime-net:
     driver: bridge
 
 volumes:
@@ -137,3 +180,5 @@ volumes:
   redis-ves-data:
   postgres-railway-data:
   redis-railway-data:
+  postgres-maritime-data:
+  redis-maritime-data:

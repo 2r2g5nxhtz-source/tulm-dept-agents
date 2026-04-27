@@ -14,16 +14,29 @@ from langchain_core.messages import SystemMessage
 from db.postgres_utils import create_memory_store
 
 import os as _os
-from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT, RAILWAY_SYSTEM_PROMPT
+from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT, RAILWAY_SYSTEM_PROMPT, MARITIME_SYSTEM_PROMPT
 from agent.contract_tool import search_contracts, get_contracts_stats, search_contracts_filtered
 from agent.receivables_tool import get_receivables_stats, search_receivables, get_critical_receivables
+from agent.acwag_tool import get_acwag_stats, search_acwag_by_company, search_acwag_filtered
 
 _DEPT_PROMPTS = {
     "finance": FINANCE_SYSTEM_PROMPT,
     "ves": VES_SYSTEM_PROMPT,
     "railway": RAILWAY_SYSTEM_PROMPT,
+    "maritime": MARITIME_SYSTEM_PROMPT,
 }
-MEMORY_SYSTEM_PROMPT = _DEPT_PROMPTS.get(_os.getenv("DEPT_MODE", "finance"), FINANCE_SYSTEM_PROMPT)
+
+_DEPT_MODE = _os.getenv("DEPT_MODE", "finance")
+MEMORY_SYSTEM_PROMPT = _DEPT_PROMPTS.get(_DEPT_MODE, FINANCE_SYSTEM_PROMPT)
+
+# Инструменты по отделам — каждый бот получает только свои tools
+_DEPT_TOOLS = {
+    "finance": [get_receivables_stats, search_receivables, get_critical_receivables],
+    "ves":     [search_contracts, search_contracts_filtered, get_contracts_stats],
+    "railway": [search_contracts, search_contracts_filtered, get_contracts_stats,
+                get_acwag_stats, search_acwag_by_company, search_acwag_filtered],
+    "maritime": [],
+}
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +98,14 @@ class AgentFactory:
                 api_key=openrouter_key or os.getenv("OPENAI_API_KEY"),
             )
 
+        # Формируем набор tools для текущего отдела
+        dept_tools = _DEPT_TOOLS.get(_DEPT_MODE, [])
+        all_tools = [create_manage_memory_tool(namespace=namespace)] + dept_tools
+
         return create_react_agent(
             llm,
             prompt=system_prompt,
-            tools=[create_manage_memory_tool(namespace=namespace), search_contracts, search_contracts_filtered, get_contracts_stats, get_receivables_stats, search_receivables, get_critical_receivables],
+            tools=all_tools,
             checkpointer=checkpointer,
             store=store
         )
