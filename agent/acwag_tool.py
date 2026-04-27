@@ -55,24 +55,34 @@ def get_acwag_stats() -> str:
 @tool
 def search_acwag_by_company(query: str) -> str:
     """Поиск записей ACWAG по названию компании/экспедитора.
-    Используй когда спрашивают: 'сколько вагонов у Raykam', 'ACWAG Zaveh Torbat', 'история перевозок компании X'."""
+    Используй когда спрашивают: 'сколько вагонов у Raykam', 'ACWAG Zaveh Torbat', 'история перевозок компании X'.
+    ВАЖНО: ищет по первому слову запроса чтобы найти все варианты написания компании."""
     try:
         conn = psycopg2.connect(os.getenv("PG_CONNECTION_STRING"))
         cur  = conn.cursor()
 
-        # Итог по компании
+        # Берём первое слово запроса как корень — ловим "Raykam Logistic" / "Raykam Logistics" / "Raykam"
+        root = query.strip().split()[0] if query.strip() else query
+
         cur.execute("""
-            SELECT company, year, COUNT(*) as batches,
+            SELECT year, COUNT(*) as batches,
                    SUM(wagon_count) as total_wagons,
                    MIN(wagon_date) as first_date,
                    MAX(wagon_date) as last_date,
                    MAX(baha) as tariff
             FROM acwag_records
             WHERE LOWER(company) LIKE LOWER(%s)
-            GROUP BY company, year
-            ORDER BY company, year DESC
-        """, (f"%{query}%",))
+            GROUP BY year
+            ORDER BY year DESC
+        """, (f"%{root}%",))
         rows = cur.fetchall()
+
+        # Итог
+        cur.execute("""
+            SELECT COUNT(*), SUM(wagon_count)
+            FROM acwag_records WHERE LOWER(company) LIKE LOWER(%s)
+        """, (f"%{root}%",))
+        total_b, total_w = cur.fetchone()
 
         cur.close()
         conn.close()
@@ -80,25 +90,15 @@ def search_acwag_by_company(query: str) -> str:
         if not rows:
             return f"Компания '{query}' не найдена в реестре ACWAG."
 
-        # Группируем по компании
-        companies = {}
-        for company, year, batches, wagons, first_d, last_d, tariff in rows:
-            if company not in companies:
-                companies[company] = []
-            companies[company].append((year, batches, wagons, first_d, last_d, tariff))
-
-        result = f"🔍 ACWAG по запросу '{query}':\n\n"
-        for company, years_data in companies.items():
-            total = sum(w for _, _, w, _, _, _ in years_data if w)
-            result += f"**{company}** — итого **{total:,} вагонов**\n"
-            for year, batches, wagons, first_d, last_d, tariff in years_data:
-                wagons_str = f"{wagons:,}" if wagons else "—"
-                result += f"  {year}: {wagons_str} ваг. ({batches} партий)"
-                if first_d:
-                    result += f" | {first_d} → {last_d}"
-                if tariff:
-                    result += f" | {tariff:.0f} USD/ваг"
-                result += "\n"
+        result = f"🔍 ACWAG — **{query}** — итого **{total_w:,} вагонов** за все годы\n\n"
+        result += "По годам:\n"
+        for year, batches, wagons, first_d, last_d, tariff in rows:
+            wagons_str = f"{wagons:,}" if wagons else "—"
+            result += f"  **{year}**: {wagons_str} ваг. ({batches} партий)"
+            if first_d:
+                result += f" | {first_d} → {last_d}"
+            if tariff:
+                result += f" | {tariff:.0f} USD/ваг"
             result += "\n"
         return result
     except Exception as e:
