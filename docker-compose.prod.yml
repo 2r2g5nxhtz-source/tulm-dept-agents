@@ -7,6 +7,9 @@ services:
     environment:
       - PG_CONNECTION_STRING=postgresql://finbot:finbot2026@postgres-finance:5432/finbot_db
       - REDIS_URL=redis://redis-finance:6379/0
+      - DEPT_MODE=finance
+      - LLM_MODEL=llama-3.3-70b-versatile
+      - OPENAI_BASE_URL=https://api.groq.com/openai/v1
     depends_on:
       postgres-finance:
         condition: service_healthy
@@ -47,6 +50,9 @@ services:
     environment:
       - PG_CONNECTION_STRING=postgresql://vesbot:vesbot2026@postgres-ves:5432/vesbot_db
       - REDIS_URL=redis://redis-ves:6379/0
+      - DEPT_MODE=ves
+      - LLM_MODEL=llama-3.3-70b-versatile
+      - OPENAI_BASE_URL=https://api.groq.com/openai/v1
     depends_on:
       postgres-ves:
         condition: service_healthy
@@ -88,6 +94,8 @@ services:
       - PG_CONNECTION_STRING=postgresql://railbot:railbot2026@postgres-railway:5432/railbot_db
       - REDIS_URL=redis://redis-railway:6379/0
       - DEPT_MODE=railway
+      - LLM_MODEL=llama-3.3-70b-versatile
+      - OPENAI_BASE_URL=https://api.groq.com/openai/v1
     depends_on:
       postgres-railway:
         condition: service_healthy
@@ -129,6 +137,8 @@ services:
       - PG_CONNECTION_STRING=postgresql://maritimebot:maritime2026@postgres-maritime:5432/maritime_db
       - REDIS_URL=redis://redis-maritime:6379/0
       - DEPT_MODE=maritime
+      - LLM_MODEL=llama-3.3-70b-versatile
+      - OPENAI_BASE_URL=https://api.groq.com/openai/v1
     depends_on:
       postgres-maritime:
         condition: service_healthy
