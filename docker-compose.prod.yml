@@ -1,6 +1,17 @@
 version: '3.8'
 
 services:
+  deploy-bot:
+    build: ./deploy_bot
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/tulm-dept-agents:/app
+    environment:
+      - DEPLOY_BOT_TOKEN=${DEPLOY_BOT_TOKEN}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+    restart: unless-stopped
+    network_mode: host
+
   finance-bot:
     build: .
     env_file: .env
