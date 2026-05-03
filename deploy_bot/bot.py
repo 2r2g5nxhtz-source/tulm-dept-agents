@@ -108,19 +108,20 @@ async def cmd_sh(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Расширенный health-check: контейнеры + uptime + диск + RAM"""
+    """Расширенный health-check: контейнеры + uptime + диск + RAM хоста"""
     if not is_admin(update): return
     await update.message.reply_text("🩺 Собираю health-check...")
-    # docker ps напрямую (не docker compose) — работает стабильнее, фильтруем по префиксу
+    # docker ps — через docker.sock (внутри контейнера, есть docker CLI)
     containers = await run("docker ps --format '{{.Names}}|{{.Status}}' 2>&1 | grep -E 'tulm-dept-agents|tulm-' | sort | awk -F'|' '{printf \"%-42s %s\\n\", $1, $2}'")
-    uptime = await run("uptime 2>&1 | sed 's/^[ ]*//'")
-    disk = await run("df -h / 2>&1 | tail -1")
-    ram = await run("free -h 2>&1")
+    # uptime / df / free хоста — через chroot (внутри slim нет этих утилит)
+    uptime = await run_on_host("uptime")
+    disk = await run_on_host("df -h /")
+    ram = await run_on_host("free -h")
 
     msg = (
         "📦 *Контейнеры:*\n```\n" + (containers[:1800] or "(нет)") + "\n```\n"
         "⏱️ *Uptime:* `" + uptime.strip()[:120] + "`\n"
-        "💾 *Диск /:* `" + disk.strip()[:120] + "`\n"
+        "💾 *Диск:*\n```\n" + disk[:300] + "\n```\n"
         "🧠 *RAM:*\n```\n" + ram[:300] + "\n```"
     )
     await update.message.reply_text(msg[:4000], parse_mode="Markdown")
