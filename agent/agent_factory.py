@@ -80,15 +80,12 @@ class AgentFactory:
         openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
         openrouter_key = os.getenv("OPENROUTER_API_KEY")
         effective_api_key = openrouter_key or os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY", "")
-        # Use configured model, but fall back to llama if base URL is Groq
-        is_groq = "groq.com" in openai_base_url
-        effective_model = "llama-3.3-70b-versatile" if is_groq else llm_model
 
         if anthropic_key and "openrouter" not in openai_base_url:
             llm = ChatAnthropic(model=llm_model, api_key=anthropic_key)
         else:
             llm = ChatOpenAI(
-                model=effective_model,
+                model=llm_model,
                 base_url=openai_base_url,
                 api_key=effective_api_key,
             )
