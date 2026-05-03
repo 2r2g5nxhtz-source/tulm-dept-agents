@@ -22,6 +22,7 @@ from agent.acwag_tool import get_acwag_stats, search_acwag_by_company, search_ac
 from agent.railway_tools import add_trk_code, revoke_trk_code, get_aswak_stats, add_apparel_wagon, get_apparel_list, calculate_commission, get_railway_receivables, update_railway_receivable_status
 from agent.maritime_tools import (get_maritime_receivables, update_maritime_receivable_status, add_maritime_receivable, add_balkansk_operation, sync_balkansk_operations, get_balkansk_list, add_container, update_container_status, get_container_list, get_container_stats, calculate_port_service, calculate_storage_fee, calculate_container_handling, calculate_bl_fee, add_voyage, get_voyage_report, get_maritime_summary)
 from agent.freight_tools import check_route_feasibility, estimate_cost, check_required_docs
+from agent.freight_crm_tools import register_client, save_freight_request, find_similar_requests
 
 _DEPT_PROMPTS = {
     "finance": FINANCE_SYSTEM_PROMPT,
@@ -49,7 +50,10 @@ _DEPT_TOOLS = {
                  add_container, update_container_status, get_container_list, get_container_stats,
                  calculate_port_service, calculate_storage_fee, calculate_container_handling, calculate_bl_fee,
                  add_voyage, get_voyage_report, get_maritime_summary],
-    "freight": [check_route_feasibility, estimate_cost, check_required_docs],
+    "freight": [
+        check_route_feasibility, estimate_cost, check_required_docs,
+        register_client, save_freight_request, find_similar_requests,
+    ],
 }
 
 logger = logging.getLogger(__name__)
