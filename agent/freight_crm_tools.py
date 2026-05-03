@@ -3,15 +3,48 @@ Freight CRM tools — для @Tulm_freight_bot
 Сохранение клиентов, заявок и котировок в БД.
 """
 import os
+import logging
 import psycopg2
 import psycopg2.extras
+import urllib.request
+import urllib.parse
+import json
 from langchain_core.tools import tool
 
-ADMIN_CHAT_ID = 812770094  # ГД ТЛЦТ — получает уведомления о новых заявках
+logger = logging.getLogger(__name__)
+
+ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "812770094"))
+# Токен @merdan_tulm_bot — для уведомлений ГД о новых заявках
+TASKBOT_TOKEN = os.environ.get("TASKBOT_NOTIFY_TOKEN", "")
 
 
 def _conn():
-    return psycopg2.connect(os.getenv('PG_CONNECTION_STRING'))
+    """Подключение к общей БД tulm_db (на Hetzner host через docker0 bridge),
+    где живут freight_clients/requests/vendors/quotes — общие с taskbot."""
+    return psycopg2.connect(os.getenv('CRM_DB_URL') or os.getenv('PG_CONNECTION_STRING'))
+
+
+def _notify_admin(text: str) -> bool:
+    """Отправить уведомление ГД через @merdan_tulm_bot (taskbot)."""
+    if not TASKBOT_TOKEN:
+        logger.warning("TASKBOT_NOTIFY_TOKEN не задан — пропускаю уведомление ГД")
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TASKBOT_TOKEN}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": ADMIN_CHAT_ID,
+            "text": text,
+            "parse_mode": "Markdown",
+        }).encode()
+        req = urllib.request.Request(url, data=data, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            ok = resp.status == 200
+        if ok:
+            logger.info(f"Уведомление ГД отправлено")
+        return ok
+    except Exception as e:
+        logger.error(f"Ошибка уведомления ГД: {e}")
+        return False
 
 
 @tool
@@ -118,12 +151,26 @@ def save_freight_request(
         cur.close()
         conn.close()
 
+        # Уведомление ГД о новой заявке
+        wt_str = f"{weight_ton}т" if weight_ton else ""
+        notification = (
+            f"🆕 *Новая фрахтовая заявка #{req['id']}*\n\n"
+            f"👤 Клиент: *{client_name}*\n"
+            f"📦 Груз: {cargo_description} {wt_str}\n"
+            f"🛣 Маршрут: {origin} → {destination} ({mode})\n"
+            f"📅 Получена: {req['created_at']:%Y-%m-%d %H:%M}\n\n"
+            f"Команды:\n"
+            f"`/quote {req['id']} vendor=<имя> price=<сумма>` — записать котировку vendor'а\n"
+            f"`/requests` — все открытые заявки"
+        )
+        _notify_admin(notification)
+
         return (f"✅ Заявка **#{req['id']}** сохранена\n"
                 f"Клиент: {client_name} (id={client_id})\n"
                 f"Маршрут: {origin} → {destination} ({mode})\n"
-                f"Груз: {cargo_description} {weight_ton}т\n"
+                f"Груз: {cargo_description} {wt_str}\n"
                 f"Статус: NEW — назначена ГД для распределения\n\n"
-                f"📨 Уведомление отправлено в @merdan_tulm_bot")
+                f"📨 ГД уведомлён через @merdan_tulm_bot")
     except Exception as e:
         return f"❌ Ошибка сохранения заявки: {e}"
 
