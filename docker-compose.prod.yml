@@ -183,6 +183,48 @@ services:
     networks:
       - maritime-net
 
+  freight-bot:
+    build: .
+    env_file: .env.freight
+    environment:
+      - REDIS_URL=redis://redis-freight:6379/0
+      - DEPT_MODE=freight
+      - LLM_MODEL=qwen/qwen3-32b
+      - OPENAI_BASE_URL=https://api.groq.com/openai/v1
+    depends_on:
+      postgres-freight:
+        condition: service_healthy
+      redis-freight:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - freight-net
+
+  postgres-freight:
+    image: ankane/pgvector:latest
+    env_file: .env.freight
+    environment:
+      - POSTGRES_USER=freightbot
+      - POSTGRES_DB=freight_db
+    volumes:
+      - postgres-freight-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - freight-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U freightbot -d freight_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-freight:
+    image: redis:7-alpine
+    volumes:
+      - redis-freight-data:/data
+    restart: unless-stopped
+    networks:
+      - freight-net
+
 networks:
   finance-net:
     driver: bridge
@@ -191,6 +233,8 @@ networks:
   railway-net:
     driver: bridge
   maritime-net:
+    driver: bridge
+  freight-net:
     driver: bridge
 
 volumes:
@@ -202,3 +246,5 @@ volumes:
   redis-railway-data:
   postgres-maritime-data:
   redis-maritime-data:
+  postgres-freight-data:
+  redis-freight-data:

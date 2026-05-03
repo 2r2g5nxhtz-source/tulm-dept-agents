@@ -14,19 +14,21 @@ from langchain_core.messages import SystemMessage
 from db.postgres_utils import create_memory_store
 
 import os as _os
-from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT, RAILWAY_SYSTEM_PROMPT, MARITIME_SYSTEM_PROMPT
+from agent.prompts import FINANCE_SYSTEM_PROMPT, VES_SYSTEM_PROMPT, RAILWAY_SYSTEM_PROMPT, MARITIME_SYSTEM_PROMPT, FREIGHT_SYSTEM_PROMPT
 from agent.contract_tool import search_contracts, get_contracts_stats, search_contracts_filtered
 from agent.receivables_tool import get_receivables_stats, search_receivables, get_critical_receivables
 from agent.assets_tool import get_assets_summary, search_assets, get_assets_by_category, get_top_assets
 from agent.acwag_tool import get_acwag_stats, search_acwag_by_company, search_acwag_filtered
 from agent.railway_tools import add_trk_code, revoke_trk_code, get_aswak_stats, add_apparel_wagon, get_apparel_list, calculate_commission, get_railway_receivables, update_railway_receivable_status
 from agent.maritime_tools import (get_maritime_receivables, update_maritime_receivable_status, add_maritime_receivable, add_balkansk_operation, sync_balkansk_operations, get_balkansk_list, add_container, update_container_status, get_container_list, get_container_stats, calculate_port_service, calculate_storage_fee, calculate_container_handling, calculate_bl_fee, add_voyage, get_voyage_report, get_maritime_summary)
+from agent.freight_tools import check_route_feasibility, estimate_cost, check_required_docs
 
 _DEPT_PROMPTS = {
     "finance": FINANCE_SYSTEM_PROMPT,
     "ves":     VES_SYSTEM_PROMPT,
     "railway": RAILWAY_SYSTEM_PROMPT,
     "maritime": MARITIME_SYSTEM_PROMPT,
+    "freight": FREIGHT_SYSTEM_PROMPT,
 }
 
 _DEPT_MODE = _os.getenv("DEPT_MODE", "finance")
@@ -47,6 +49,7 @@ _DEPT_TOOLS = {
                  add_container, update_container_status, get_container_list, get_container_stats,
                  calculate_port_service, calculate_storage_fee, calculate_container_handling, calculate_bl_fee,
                  add_voyage, get_voyage_report, get_maritime_summary],
+    "freight": [check_route_feasibility, estimate_cost, check_required_docs],
 }
 
 logger = logging.getLogger(__name__)
