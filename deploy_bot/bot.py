@@ -108,19 +108,21 @@ async def cmd_sh(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Расширенный health-check: docker ps + uptime + диск + RAM"""
+    """Расширенный health-check: контейнеры + uptime + диск + RAM"""
     if not is_admin(update): return
     await update.message.reply_text("🩺 Собираю health-check...")
-    parts = []
-    parts.append("📦 *Контейнеры:*")
-    parts.append("```\n" + (await run(f"docker compose -f {COMPOSE_FILE} ps --format 'table {{{{.Service}}}}\\t{{{{.Status}}}}'"))[:1500] + "\n```")
-    parts.append("⏱️ *Uptime:*")
-    parts.append("```\n" + (await run_on_host("uptime"))[:200] + "\n```")
-    parts.append("💾 *Диск:*")
-    parts.append("```\n" + (await run_on_host("df -h / 2>/dev/null | tail -2"))[:300] + "\n```")
-    parts.append("🧠 *RAM:*")
-    parts.append("```\n" + (await run_on_host("free -h"))[:400] + "\n```")
-    msg = "\n".join(parts)
+    # docker ps напрямую (не docker compose) — работает стабильнее, фильтруем по префиксу
+    containers = await run("docker ps --format '{{.Names}}|{{.Status}}' 2>&1 | grep -E 'tulm-dept-agents|tulm-' | sort | awk -F'|' '{printf \"%-42s %s\\n\", $1, $2}'")
+    uptime = await run("uptime 2>&1 | sed 's/^[ ]*//'")
+    disk = await run("df -h / 2>&1 | tail -1")
+    ram = await run("free -h 2>&1")
+
+    msg = (
+        "📦 *Контейнеры:*\n```\n" + (containers[:1800] or "(нет)") + "\n```\n"
+        "⏱️ *Uptime:* `" + uptime.strip()[:120] + "`\n"
+        "💾 *Диск /:* `" + disk.strip()[:120] + "`\n"
+        "🧠 *RAM:*\n```\n" + ram[:300] + "\n```"
+    )
     await update.message.reply_text(msg[:4000], parse_mode="Markdown")
 
 
