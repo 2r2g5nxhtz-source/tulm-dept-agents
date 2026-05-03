@@ -159,9 +159,14 @@ class TelegramMessageProcessor(MessageProcessor):
         context = self.contexts.get(user_id)
         
         if update and context:
+            # Safety net: если LLM вернул пустой текст — fallback чтобы клиент не остался без ответа
+            text = (response or "").strip()
+            if not text:
+                text = ("✅ Ваше сообщение получено. Менеджер ТЛЦТ свяжется с вами в течение 24 часов.\n\n"
+                        "С уважением, ТЛЦТ")
+                logger.warning(f"LLM вернул пустой ответ для user {user_id} — отправляю fallback")
             try:
-                # No need for typing indicator here as it's already managed by the process_messages_after_delay method
-                await update.message.reply_text(response)
+                await update.message.reply_text(text)
                 logger.info(f"Response sent to user {user_id}")
             except Exception as e:
                 log_error(e, {"user_id": user_id, "operation": "send_response"})
