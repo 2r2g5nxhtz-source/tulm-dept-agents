@@ -127,6 +127,46 @@ async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg[:4000], parse_mode="Markdown")
 
 
+async def cmd_allow(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Добавить chat_id в whitelist dept-бота. Пример: /allow ves 562755251"""
+    if not is_admin(update): return
+    args = ctx.args
+    if len(args) != 2:
+        await update.message.reply_text(
+            "Использование: `/allow <бот> <chat_id>`\n"
+            "Боты: finance, ves, railway, maritime\n"
+            "Пример: `/allow maritime 562755251`",
+            parse_mode="Markdown"
+        )
+        return
+    bot, chat_id = args[0].lower(), args[1]
+    if bot not in {"finance","ves","railway","maritime"}:
+        await update.message.reply_text(f"❌ Неизвестный бот: {bot}. Доступны: finance, ves, railway, maritime")
+        return
+    if not chat_id.lstrip("-").isdigit():
+        await update.message.reply_text(f"❌ chat_id должен быть числом, получил: {chat_id}")
+        return
+    env_file = ".env" if bot == "finance" else f".env.{bot}"
+    # Хост-команда: добавить chat_id в ALLOWED_USERS этого бота, перезапустить контейнер
+    cmd = (
+        f"cd /repo && "
+        f"if grep -q '^ALLOWED_USERS=' {env_file}; then "
+        f"  sed -i 's/^ALLOWED_USERS=\\(.*\\)$/ALLOWED_USERS=\\1,{chat_id}/' {env_file}; "
+        f"else "
+        f"  echo 'ALLOWED_USERS={chat_id}' >> {env_file}; "
+        f"fi && "
+        f"docker rm -f tulm-dept-agents_{bot}-bot_1 2>/dev/null; "
+        f"export COMPOSE_PROJECT_NAME=tulm-dept-agents && "
+        f"docker compose -f docker-compose.prod.yml up -d --no-deps {bot}-bot 2>&1 | tail -3"
+    )
+    await update.message.reply_text(f"⚙️ Добавляю `{chat_id}` в `{bot}-bot`...", parse_mode="Markdown")
+    result = await run_on_host(cmd)
+    await update.message.reply_text(
+        f"✅ Готово. Сервис пересоздан.\n```\n{result[-1500:]}\n```",
+        parse_mode="Markdown"
+    )
+
+
 async def cmd_backup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Запустить pg_dump всех 4 БД на хосте. Авто-cron в 03:00 UTC ежедневно."""
     if not is_admin(update): return
@@ -176,7 +216,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🚀 *Управление:*\n"
         "/deploy — git pull + пересобрать всё\n"
         "/restart <бот> — перезапуск\n"
-        "/backup — pg_dump всех 4 БД (auto cron 03:00 UTC)\n\n"
+        "/backup — pg_dump всех 4 БД (auto cron 03:00 UTC)\n"
+        "/allow <бот> <chat_id> — добавить пользователя в whitelist отдела\n\n"
         "🔧 *Произвольные команды:*\n"
         "/sh <cmd> — в контейнере (cwd=/repo)\n"
         "/sh host: <cmd> — на хосте Hetzner\n\n"
@@ -191,6 +232,7 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("health", cmd_health))
     app.add_handler(CommandHandler("backup", cmd_backup))
+    app.add_handler(CommandHandler("allow", cmd_allow))
     app.add_handler(CommandHandler("me", cmd_me))
     app.add_handler(CommandHandler("logs", cmd_logs))
     app.add_handler(CommandHandler("restart", cmd_restart))
