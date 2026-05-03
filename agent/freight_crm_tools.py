@@ -151,14 +151,16 @@ def save_freight_request(
         cur.close()
         conn.close()
 
-        # Уведомление ГД о новой заявке
+        # Уведомление ГД о новой заявке (время в Ашхабад UTC+5)
+        from datetime import timezone, timedelta
+        ashgabat_time = req['created_at'].astimezone(timezone(timedelta(hours=5)))
         wt_str = f"{weight_ton}т" if weight_ton else ""
         notification = (
             f"🆕 *Новая фрахтовая заявка #{req['id']}*\n\n"
             f"👤 Клиент: *{client_name}*\n"
             f"📦 Груз: {cargo_description} {wt_str}\n"
             f"🛣 Маршрут: {origin} → {destination} ({mode})\n"
-            f"📅 Получена: {req['created_at']:%Y-%m-%d %H:%M}\n\n"
+            f"📅 Получена: {ashgabat_time:%Y-%m-%d %H:%M} (Ашхабад)\n\n"
             f"Команды:\n"
             f"`/quote {req['id']} vendor=<имя> price=<сумма>` — записать котировку vendor'а\n"
             f"`/requests` — все открытые заявки"
