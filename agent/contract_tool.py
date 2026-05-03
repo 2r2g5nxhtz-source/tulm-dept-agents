@@ -37,17 +37,55 @@ def search_contracts(query: str) -> str:
         return f"Ошибка поиска: {e}"
 
 @tool
+_TYPE_MAP = {
+    "жд": "Demirýol", "железнодорожный": "Demirýol", "железная дорога": "Demirýol",
+    "аппарель": "Apparel",
+    "мультимодал": "Multimodal", "мультимодальный": "Multimodal",
+    "авто": "Awto", "автомобильный": "Awto",
+    "авиа": "Awia", "авиационный": "Awia", "авиаперевозки": "Awia",
+    "морской": "Deňiz", "море": "Deňiz",
+    "фрахт": "Fraht",
+    "вагон": "Wagon", "аренда вагонов": "Wagon kärende",
+    "контейнер": "Konteýner", "аренда контейнеров": "Konteýner kärende",
+    "склад": "Ammar",
+    "агентство": "Agentlik", "агентский": "Agentlik",
+    "поручение": "Tabşyryk",
+}
+_CURRENCY_MAP = {
+    "tmt": "Manat", "манат": "Manat", "манаты": "Manat",
+    "usd": "USD", "доллар": "USD", "доллары": "USD",
+    "eur": "EUR", "евро": "EUR",
+    "мульти": "Multiwalýuta", "мультивалюта": "Multiwalýuta", "мультивалютный": "Multiwalýuta",
+}
+
+
+def _map_type(value: str) -> str:
+    if not value: return value
+    key = value.strip().lower()
+    return _TYPE_MAP.get(key, value)
+
+
+def _map_currency(value: str) -> str:
+    if not value: return value
+    key = value.strip().lower()
+    return _CURRENCY_MAP.get(key, value)
+
+
 def search_contracts_filtered(contract_type: str = "", currency: str = "") -> str:
-    """Перекрёстный поиск договоров ТЛЦТ по типу договора и/или валюте.
-    Используй когда спрашивают: 'ЖД договоры в манатах', 'автомобильные в USD', 'все договоры типа ЖД' и т.п.
-    contract_type: тип договора (например: ЖД, автомобильный, морской, авиа)
-    currency: валюта (например: TMT, USD, EUR)"""
+    """Перекрёстный поиск договоров ТЛЦТ по типу и/или валюте.
+    Используй когда спрашивают: 'ЖД договоры в манатах', 'автомобильные в USD', 'все договоры типа ЖД'.
+    contract_type: ЖД / автомобильный / морской / авиа / мультимодал / аппарель / фрахт / контейнер / вагон / склад
+    currency: TMT (манаты) / USD (доллары) / EUR (евро) / мультивалюта.
+    Русские термины автоматически переводятся в туркменские (Demirýol, Manat, и т.д.)."""
     try:
         conn = psycopg2.connect(os.getenv('PG_CONNECTION_STRING'))
         cur = conn.cursor()
 
         conditions = []
         params = []
+
+        contract_type = _map_type(contract_type)
+        currency = _map_currency(currency)
 
         if contract_type:
             conditions.append("LOWER(type) LIKE LOWER(%s)")
