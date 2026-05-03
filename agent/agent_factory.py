@@ -51,8 +51,8 @@ _DEPT_TOOLS = {
                  calculate_port_service, calculate_storage_fee, calculate_container_handling, calculate_bl_fee,
                  add_voyage, get_voyage_report, get_maritime_summary],
     "freight": [
-        check_route_feasibility, estimate_cost, check_required_docs,
-        register_client, save_freight_request, find_similar_requests,
+        save_freight_request,    # обязательный — сохраняет заявку в БД
+        check_required_docs,      # список документов по стране назначения
     ],
 }
 
