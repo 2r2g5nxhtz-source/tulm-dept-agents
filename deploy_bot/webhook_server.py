@@ -14,7 +14,7 @@ log = logging.getLogger("webhook")
 def run_deploy():
     log.info("Запуск деплоя...")
     result = subprocess.run(
-        "cd /app && git pull origin main && "
+        "cd /repo && git pull origin main && "
         "docker compose -f docker-compose.prod.yml up -d --build 2>&1",
         shell=True, capture_output=True, text=True, timeout=600
     )

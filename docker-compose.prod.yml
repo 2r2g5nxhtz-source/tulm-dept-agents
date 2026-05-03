@@ -5,7 +5,7 @@ services:
     build: ./deploy_bot
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /root/tulm-dept-agents:/app
+      - /root/tulm-dept-agents:/repo
     environment:
       - WEBHOOK_SECRET=tulm-deploy-2026
       - WEBHOOK_PORT=9999
