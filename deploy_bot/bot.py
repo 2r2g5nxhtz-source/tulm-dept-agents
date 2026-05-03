@@ -8,12 +8,17 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 TOKEN = os.environ["DEPLOY_BOT_TOKEN"]
-ADMIN_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))
 APP_DIR = os.environ.get("REPO_DIR", "/repo")
 COMPOSE_FILE = os.environ.get("COMPOSE_FILE", f"{APP_DIR}/docker-compose.prod.yml")
 
+# Whitelist: ADMIN_CHAT_ID или ALLOWED_USERS (csv) — список разрешённых chat_id
+_raw_admin = os.environ.get("ADMIN_CHAT_ID", "0")
+_raw_allowed = os.environ.get("ALLOWED_USERS", "")
+_ids = {int(x.strip()) for x in (_raw_admin + "," + _raw_allowed).split(",") if x.strip().isdigit()}
+ADMIN_IDS = _ids - {0}
+
 def is_admin(update: Update) -> bool:
-    return update.effective_user.id == ADMIN_ID
+    return update.effective_user.id in ADMIN_IDS
 
 async def run(cmd: str) -> str:
     proc = await asyncio.create_subprocess_shell(
@@ -102,19 +107,62 @@ async def cmd_sh(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"```\n{chunk}\n```", parse_mode="Markdown")
 
 
-async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Расширенный health-check: docker ps + uptime + диск + RAM"""
     if not is_admin(update): return
+    await update.message.reply_text("🩺 Собираю health-check...")
+    parts = []
+    parts.append("📦 *Контейнеры:*")
+    parts.append("```\n" + (await run(f"docker compose -f {COMPOSE_FILE} ps --format 'table {{{{.Service}}}}\\t{{{{.Status}}}}'"))[:1500] + "\n```")
+    parts.append("⏱️ *Uptime:*")
+    parts.append("```\n" + (await run_on_host("uptime"))[:200] + "\n```")
+    parts.append("💾 *Диск:*")
+    parts.append("```\n" + (await run_on_host("df -h / 2>/dev/null | tail -2"))[:300] + "\n```")
+    parts.append("🧠 *RAM:*")
+    parts.append("```\n" + (await run_on_host("free -h"))[:400] + "\n```")
+    msg = "\n".join(parts)
+    await update.message.reply_text(msg[:4000], parse_mode="Markdown")
+
+
+async def cmd_me(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Показывает твой chat_id, username и admin-статус. Открыто всем (helper для добавления админов)"""
+    u = update.effective_user
+    role = "✅ admin" if is_admin(update) else "❌ not in whitelist"
+    msg = (
+        f"👤 *Ваш Telegram:*\n"
+        f"chat_id: `{u.id}`\n"
+        f"username: @{u.username or '—'}\n"
+        f"имя: {u.first_name or ''} {u.last_name or ''}\n"
+        f"роль: {role}\n\n"
+        f"Текущий whitelist: `{sorted(ADMIN_IDS)}`"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text(
+            f"❌ Доступ запрещён.\n"
+            f"Ваш chat_id: `{update.effective_user.id}`\n"
+            f"Попросите Мердана добавить вас в whitelist.",
+            parse_mode="Markdown"
+        )
+        return
     await update.message.reply_text(
         "🤖 TULM Hetzner Bot\n\n"
-        "/deploy — git pull + пересобрать все боты\n"
-        "/status — статус контейнеров\n"
-        "/logs <бот> — логи (finance-bot/ves-bot/railway-bot/maritime-bot)\n"
-        "/restart <бот> — перезапустить контейнер\n"
-        "/sh <команда> — выполнить любую команду на сервере (cwd=/repo)\n\n"
-        "Примеры /sh:\n"
-        "• /sh docker ps\n"
-        "• /sh df -h\n"
-        "• /sh docker logs tulm-dept-agents_ves-bot_1 --tail 30"
+        "📊 *Информация:*\n"
+        "/status — `docker compose ps`\n"
+        "/health — расширенный health (контейнеры + uptime + диск + RAM)\n"
+        "/me — мой chat_id и whitelist\n"
+        "/logs <бот> — логи 50 строк\n\n"
+        "🚀 *Управление:*\n"
+        "/deploy — git pull + пересобрать всё\n"
+        "/restart <бот> — перезапуск\n\n"
+        "🔧 *Произвольные команды:*\n"
+        "/sh <cmd> — в контейнере (cwd=/repo)\n"
+        "/sh host: <cmd> — на хосте Hetzner\n\n"
+        "Имена ботов: finance-bot, ves-bot, railway-bot, maritime-bot",
+        parse_mode="Markdown"
     )
 
 def main():
@@ -122,6 +170,8 @@ def main():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("deploy", cmd_deploy))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("health", cmd_health))
+    app.add_handler(CommandHandler("me", cmd_me))
     app.add_handler(CommandHandler("logs", cmd_logs))
     app.add_handler(CommandHandler("restart", cmd_restart))
     app.add_handler(CommandHandler("sh", cmd_sh))
