@@ -90,19 +90,57 @@ class AgentFactory:
         from langchain_openai import ChatOpenAI
         from langchain_anthropic import ChatAnthropic
 
+        # ── LLM провайдеры (с fallback chain) ─────────────────────────────
+        # 1. Если задан CEREBRAS_API_KEY → primary = Cerebras (60K TPM)
+        # 2. fallback = Groq (текущий, 6K TPM)
+        # 3. fallback fallback = llama-3.3-70b на Groq (12K TPM, другой пул)
+        # Anthropic — обходной путь если задан ANTHROPIC_API_KEY (платный, не трогаем)
+
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
+        cerebras_key  = os.getenv("CEREBRAS_API_KEY")
+        groq_key      = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY", "")
         openrouter_key = os.getenv("OPENROUTER_API_KEY")
-        effective_api_key = openrouter_key or os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY", "")
+        # Старая логика: один LLM по OPENAI_BASE_URL/OPENAI_API_KEY (для обратной совместимости)
+        openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
+        effective_api_key = openrouter_key or groq_key
 
         if anthropic_key and "openrouter" not in openai_base_url:
             llm = ChatAnthropic(model=llm_model, api_key=anthropic_key)
         else:
-            llm = ChatOpenAI(
+            # Primary
+            primary = ChatOpenAI(
                 model=llm_model,
                 base_url=openai_base_url,
                 api_key=effective_api_key,
+                timeout=30,
             )
+            fallbacks = []
+            # Fallback #1: Cerebras qwen3-32b (если ключ задан и primary не Cerebras)
+            if cerebras_key and "cerebras" not in openai_base_url:
+                fallbacks.append(ChatOpenAI(
+                    model="qwen-3-32b",
+                    base_url="https://api.cerebras.ai/v1",
+                    api_key=cerebras_key,
+                    timeout=30,
+                ))
+            # Fallback #2: Groq qwen3-32b (если primary не Groq)
+            if groq_key and "groq.com" not in openai_base_url:
+                fallbacks.append(ChatOpenAI(
+                    model="qwen/qwen3-32b",
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=groq_key,
+                    timeout=30,
+                ))
+            # Fallback #3: llama-3.3-70b на Groq (другой пул TPM)
+            if groq_key:
+                fallbacks.append(ChatOpenAI(
+                    model="llama-3.3-70b-versatile",
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=groq_key,
+                    timeout=30,
+                ))
+            llm = primary.with_fallbacks(fallbacks) if fallbacks else primary
+            logger.info(f"LLM chain: primary={llm_model} ({openai_base_url}), fallbacks={len(fallbacks)}")
 
         dept_tools = _DEPT_TOOLS.get(_DEPT_MODE, [])
         all_tools = [create_manage_memory_tool(namespace=namespace)] + dept_tools
