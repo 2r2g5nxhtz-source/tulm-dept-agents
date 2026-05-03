@@ -103,19 +103,44 @@ def save_freight_request(
     pickup_date: str = "",
 ) -> str:
     """Сохранить фрахтовую заявку в БД ТЛЦТ.
-    Вызывай ВСЕГДА после получения запроса от клиента.
-    client_name: название компании клиента (обязательно)
+    ВСЕГДА передавай source_chat_id — это ID отправителя в Telegram (нужен для дедупликации).
+    Если ID отправителя уже присылал такую же заявку (тот же маршрут + груз) за последние 30 минут —
+    система не создаст дубль, а вернёт существующий id.
+
+    client_name: название компании клиента
     origin/destination: точки маршрута
-    mode: sea / rail / multimodal / auto / air
-    cargo_description: описание груза словами
+    mode: sea / rail / multimodal / auto / air / unknown
+    cargo_description: описание груза
     weight_ton: вес в тоннах (0 если не указан)
-    raw_message: исходное сообщение клиента дословно
-    pickup_date: дата отгрузки в формате YYYY-MM-DD (пусто если не указана)"""
+    raw_message: ТЕКСТ клиента дословно
+    source_chat_id: Telegram user_id отправителя (передаётся системой)
+    pickup_date: YYYY-MM-DD"""
     try:
         conn = _conn()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        # 1. Найти/создать клиента
+        # 1. ДЕДУПЛИКАЦИЯ: same (chat_id + origin + destination + ~cargo) за последние 30 мин
+        if source_chat_id:
+            cur.execute("""
+                SELECT id, created_at FROM freight_requests
+                WHERE source_chat_id = %s
+                  AND LOWER(origin) = LOWER(%s)
+                  AND LOWER(destination) = LOWER(%s)
+                  AND LOWER(LEFT(COALESCE(cargo_description,''), 30)) = LOWER(LEFT(%s, 30))
+                  AND created_at > NOW() - INTERVAL '30 minutes'
+                  AND status NOT IN ('cancelled')
+                ORDER BY created_at DESC LIMIT 1
+            """, (source_chat_id, origin.strip(), destination.strip(), cargo_description.strip()))
+            existing = cur.fetchone()
+            if existing:
+                cur.close()
+                conn.close()
+                from datetime import timezone, timedelta
+                t = existing['created_at'].astimezone(timezone(timedelta(hours=5)))
+                return (f"ℹ️ Эта заявка уже зарегистрирована **#{existing['id']}** в {t:%H:%M} (Ашхабад). "
+                        f"Не создаю дубль. Если нужно дополнить — напишите 'дополняю заявку #{existing['id']}'.")
+
+        # 2. Найти/создать клиента
         cur.execute("""
             INSERT INTO freight_clients (name, country)
             VALUES (%s, %s)
@@ -124,7 +149,7 @@ def save_freight_request(
         """, (client_name.strip(), destination_country.strip() or None))
         client_id = cur.fetchone()['id']
 
-        # 2. Создать заявку
+        # 3. Создать заявку
         pd = pickup_date.strip() if pickup_date else None
         cur.execute("""
             INSERT INTO freight_requests (
@@ -151,7 +176,7 @@ def save_freight_request(
         cur.close()
         conn.close()
 
-        # Уведомление ГД о новой заявке (время в Ашхабад UTC+5)
+        # Уведомление ГД о новой заявке (Ашхабад UTC+5)
         from datetime import timezone, timedelta
         ashgabat_time = req['created_at'].astimezone(timezone(timedelta(hours=5)))
         wt_str = f"{weight_ton}т" if weight_ton else ""
@@ -162,19 +187,16 @@ def save_freight_request(
             f"🛣 Маршрут: {origin} → {destination} ({mode})\n"
             f"📅 Получена: {ashgabat_time:%Y-%m-%d %H:%M} (Ашхабад)\n\n"
             f"Команды:\n"
-            f"`/quote {req['id']} vendor=<имя> price=<сумма>` — записать котировку vendor'а\n"
-            f"`/requests` — все открытые заявки"
+            f"`/quote {req['id']} vendor=<имя> price=<сумма>`\n"
+            f"`/requests`"
         )
         _notify_admin(notification)
 
-        return (f"✅ Заявка **#{req['id']}** сохранена\n"
-                f"Клиент: {client_name} (id={client_id})\n"
-                f"Маршрут: {origin} → {destination} ({mode})\n"
-                f"Груз: {cargo_description} {wt_str}\n"
-                f"Статус: NEW — назначена ГД для распределения\n\n"
-                f"📨 ГД уведомлён через @merdan_tulm_bot")
+        return (f"✅ Заявка **#{req['id']}** принята: {origin}→{destination} ({mode}), "
+                f"{cargo_description} {wt_str}. "
+                f"Диспетчер свяжется в течение 24 часов.")
     except Exception as e:
-        return f"❌ Ошибка сохранения заявки: {e}"
+        return f"❌ Ошибка сохранения: {e}"
 
 
 @tool

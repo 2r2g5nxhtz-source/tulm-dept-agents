@@ -77,7 +77,14 @@ class AgentFactory:
         checkpointer = AsyncPostgresSaver(pool)
         store = await create_memory_store(pg_connection, pool, vector_dims, embed_model)
         namespace = (str(user_id),)
-        system_prompt = MEMORY_SYSTEM_PROMPT.format(memory_content="")
+        # Безопасный format: используем dict с дефолтами через string.Formatter
+        # Чтобы промпты dept-ботов без {user_id} не падали с KeyError
+        from string import Formatter
+        class _SafeDict(dict):
+            def __missing__(self, key): return "{" + key + "}"
+        system_prompt = Formatter().vformat(
+            MEMORY_SYSTEM_PROMPT, (), _SafeDict(memory_content="", user_id=str(user_id))
+        )
         
         import os
         from langchain_openai import ChatOpenAI
