@@ -3,23 +3,15 @@ name: Deploy to Hetzner
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # позволяет запускать вручную из GitHub UI
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: 178.104.81.174
-          username: root
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          port: 22
-          script_stop: true
-          script: |
-            cd ~/tulm-dept-agents
-            git pull origin main
-            docker compose -f docker-compose.prod.yml up -d --build
-            echo "=== Деплой завершён $(date) ==="
-            docker compose -f docker-compose.prod.yml ps
+      - name: Trigger deploy via webhook
+        run: |
+          curl -f --connect-timeout 30 \
+            "http://178.104.81.174:9999/deploy?token=${{ secrets.WEBHOOK_SECRET }}" \
+            && echo "Deploy triggered successfully" \
+            || echo "Webhook not available yet - deploy manually"
