@@ -54,14 +54,43 @@ async def cmd_restart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     result = await run(f"docker compose -f {COMPOSE_FILE} restart {service} 2>&1")
     await update.message.reply_text(f"♻️ Перезапущен {service}:\n```\n{result}\n```", parse_mode="Markdown")
 
+async def cmd_sh(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Выполнить любую shell-команду на Hetzner. Только для ADMIN."""
+    if not is_admin(update): return
+    cmd = update.message.text.partition(' ')[2].strip()
+    if not cmd:
+        await update.message.reply_text(
+            "Использование: /sh <команда>\n"
+            "Пример: /sh docker ps\n"
+            "Пример: /sh df -h\n"
+            "Пример: /sh cat /root/tulm-dept-agents/.env.deploy-bot"
+        )
+        return
+    await update.message.reply_text(f"⚙️ Выполняю: `{cmd[:200]}`", parse_mode="Markdown")
+    try:
+        result = await run(cmd)
+    except asyncio.TimeoutError:
+        result = "[timeout 300s]"
+    if not result.strip():
+        result = "(пустой вывод)"
+    # Telegram limit 4096 — берём последние 3500 для запаса
+    chunk = result[-3500:]
+    await update.message.reply_text(f"```\n{chunk}\n```", parse_mode="Markdown")
+
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update): return
     await update.message.reply_text(
-        "🤖 TULM Deploy Bot\n\n"
+        "🤖 TULM Hetzner Bot\n\n"
         "/deploy — git pull + пересобрать все боты\n"
         "/status — статус контейнеров\n"
         "/logs <бот> — логи (finance-bot/ves-bot/railway-bot/maritime-bot)\n"
-        "/restart <бот> — перезапустить контейнер"
+        "/restart <бот> — перезапустить контейнер\n"
+        "/sh <команда> — выполнить любую команду на сервере (cwd=/repo)\n\n"
+        "Примеры /sh:\n"
+        "• /sh docker ps\n"
+        "• /sh df -h\n"
+        "• /sh docker logs tulm-dept-agents_ves-bot_1 --tail 30"
     )
 
 def main():
@@ -71,6 +100,7 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("logs", cmd_logs))
     app.add_handler(CommandHandler("restart", cmd_restart))
+    app.add_handler(CommandHandler("sh", cmd_sh))
     app.run_polling()
 
 if __name__ == "__main__":
