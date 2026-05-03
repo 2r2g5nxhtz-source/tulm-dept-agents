@@ -9,8 +9,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 TOKEN = os.environ["DEPLOY_BOT_TOKEN"]
 ADMIN_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))
-COMPOSE_FILE = "/app/docker-compose.prod.yml"
-APP_DIR = "/app"
+APP_DIR = os.environ.get("REPO_DIR", "/repo")
+COMPOSE_FILE = os.environ.get("COMPOSE_FILE", f"{APP_DIR}/docker-compose.prod.yml")
 
 def is_admin(update: Update) -> bool:
     return update.effective_user.id == ADMIN_ID

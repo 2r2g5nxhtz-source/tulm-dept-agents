@@ -3,12 +3,14 @@ version: '3.8'
 services:
   deploy-bot:
     build: ./deploy_bot
+    env_file: .env.deploy-bot
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /root/tulm-dept-agents:/repo
     environment:
-      - WEBHOOK_SECRET=tulm-deploy-2026
       - WEBHOOK_PORT=9999
+      - REPO_DIR=/repo
+      - COMPOSE_FILE=/repo/docker-compose.prod.yml
     ports:
       - "9999:9999"
     restart: unless-stopped
