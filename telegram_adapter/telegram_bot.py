@@ -4,7 +4,8 @@ Telegram-specific bot implementation.
 
 import asyncio
 import logging
-from typing import List, Any, Dict
+import os
+from typing import List, Any, Dict, Set
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -15,6 +16,22 @@ from config.bot_config import BotConfig
 from db.user_data import clear_user_data
 
 logger = logging.getLogger(__name__)
+
+
+def _load_allowed_users() -> Set[int]:
+    """Whitelist user_ids из env ALLOWED_USERS (csv) + ADMIN_CHAT_ID.
+    Если оба пустые — возвращает пустой set, бот будет фильтровать ВСЕХ
+    (защитная позиция: лучше не отвечать никому, чем отвечать всем)."""
+    raw_admin = os.environ.get("ADMIN_CHAT_ID", "")
+    raw_allowed = os.environ.get("ALLOWED_USERS", "")
+    combined = (raw_admin + "," + raw_allowed)
+    ids = {int(x.strip()) for x in combined.split(",") if x.strip().lstrip("-").isdigit()}
+    ids -= {0}
+    if not ids:
+        logger.warning("ALLOWED_USERS/ADMIN_CHAT_ID не заданы — бот не будет отвечать никому")
+    else:
+        logger.info(f"Whitelist активен: {sorted(ids)}")
+    return ids
 
 class TelegramTypingIndicator(TypingIndicator):
     """Telegram-specific typing indicator implementation"""
@@ -199,13 +216,23 @@ class TelegramBot:
             raise ValueError("Telegram token is required")
             
         app = Application.builder().token(self.config.telegram_token).build()
-        
-        # Register handlers
+
+        # Whitelist filter — только эти user_id могут писать боту
+        allowed_ids = _load_allowed_users()
+        if allowed_ids:
+            user_filter = filters.User(user_id=list(allowed_ids))
+        else:
+            # Если whitelist пустой — блокируем всех (никто не пройдёт)
+            user_filter = filters.User(user_id=[-1])
+
+        # Register handlers — все защищены user_filter
         app.add_handlers([
-            CommandHandler("start", self.handle_start),
-            CommandHandler("help", self.handle_help),
-            CommandHandler("reset", self.handle_reset),  # Add reset command
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
+            CommandHandler("start", self.handle_start, filters=user_filter),
+            CommandHandler("help", self.handle_help, filters=user_filter),
+            CommandHandler("reset", self.handle_reset, filters=user_filter),
+            MessageHandler(filters.TEXT & ~filters.COMMAND & user_filter, self.handle_message),
+            # Catch-all для не-whitelist: вежливый отлуп
+            MessageHandler(filters.ALL & ~user_filter, self.handle_unauthorized),
         ])
         app.add_error_handler(self.handle_error)
         
@@ -315,6 +342,23 @@ class TelegramBot:
         """Log errors"""
         logger.error(f"Update {update} caused error {context.error}")
         
+    async def handle_unauthorized(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Вежливый отлуп для пользователей вне whitelist."""
+        u = update.effective_user
+        logger.warning(
+            f"DENY user={u.id} username=@{u.username or '-'} "
+            f"name='{u.first_name or ''} {u.last_name or ''}' "
+            f"text={(update.message.text or '')[:60]!r}"
+        )
+        try:
+            await update.message.reply_text(
+                "❌ Доступ запрещён.\n"
+                f"Этот бот — внутренний инструмент ТЛЦТ. Ваш chat_id: {u.id}\n"
+                "По вопросам обращайтесь к администратору."
+            )
+        except Exception:
+            pass  # Не критично если не получилось ответить
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming messages"""
         user_id = str(update.effective_user.id)
