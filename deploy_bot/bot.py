@@ -54,26 +54,50 @@ async def cmd_restart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     result = await run(f"docker compose -f {COMPOSE_FILE} restart {service} 2>&1")
     await update.message.reply_text(f"♻️ Перезапущен {service}:\n```\n{result}\n```", parse_mode="Markdown")
 
+async def run_on_host(cmd: str) -> str:
+    """Выполнить команду НА ХОСТЕ через одноразовый docker-контейнер с mount /:/host"""
+    escaped = cmd.replace('"', '\\"')
+    docker_cmd = (
+        f'docker run --rm --pid=host --network=host '
+        f'-v /:/host -w /host/root '
+        f'alpine sh -c "chroot /host sh -c \\"{escaped}\\""'
+    )
+    proc = await asyncio.create_subprocess_shell(
+        docker_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await asyncio.wait_for(proc.communicate(), timeout=300)
+    return out.decode("utf-8", errors="replace")[-3000:]
+
+
 async def cmd_sh(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Выполнить любую shell-команду на Hetzner. Только для ADMIN."""
+    """Выполнить shell-команду. По умолчанию — внутри контейнера в /repo.
+    Префикс `host:` — выполнить на хосте Hetzner (через docker chroot)."""
     if not is_admin(update): return
-    cmd = update.message.text.partition(' ')[2].strip()
-    if not cmd:
+    raw = update.message.text.partition(' ')[2].strip()
+    if not raw:
         await update.message.reply_text(
-            "Использование: /sh <команда>\n"
-            "Пример: /sh docker ps\n"
-            "Пример: /sh df -h\n"
-            "Пример: /sh cat /root/tulm-dept-agents/.env.deploy-bot"
+            "Использование: /sh <команда>\n\n"
+            "По умолчанию выполняется в контейнере (cwd=/repo).\n"
+            "Префикс `host:` выполняет на хосте Hetzner.\n\n"
+            "Примеры:\n"
+            "• /sh ls — список файлов /repo\n"
+            "• /sh docker ps — список контейнеров\n"
+            "• /sh host: ls /root — корень хоста\n"
+            "• /sh host: df -h — место на диске хоста\n"
+            "• /sh host: cat /root/tulm-dept-agents/.env"
         )
         return
-    await update.message.reply_text(f"⚙️ Выполняю: `{cmd[:200]}`", parse_mode="Markdown")
+
+    on_host = raw.startswith("host:")
+    cmd = raw[5:].strip() if on_host else raw
+    target = "🖥️ host" if on_host else "📦 container"
+    await update.message.reply_text(f"⚙️ {target}: `{cmd[:200]}`", parse_mode="Markdown")
     try:
-        result = await run(cmd)
+        result = await (run_on_host(cmd) if on_host else run(cmd))
     except asyncio.TimeoutError:
         result = "[timeout 300s]"
     if not result.strip():
         result = "(пустой вывод)"
-    # Telegram limit 4096 — берём последние 3500 для запаса
     chunk = result[-3500:]
     await update.message.reply_text(f"```\n{chunk}\n```", parse_mode="Markdown")
 
