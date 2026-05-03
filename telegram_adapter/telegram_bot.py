@@ -33,6 +33,13 @@ def _load_allowed_users() -> Set[int]:
         logger.info(f"Whitelist активен: {sorted(ids)}")
     return ids
 
+
+def _is_public_bot() -> bool:
+    """PUBLIC_BOT=true в env => бот доступен всем (например freight-bot для клиентов).
+    В этом режиме whitelist не применяется. Используется ОЧЕНЬ осторожно —
+    только для ботов где tools только-для-чтения и нет чувствительных данных."""
+    return os.environ.get("PUBLIC_BOT", "").lower() in ("true", "1", "yes")
+
 class TelegramTypingIndicator(TypingIndicator):
     """Telegram-specific typing indicator implementation"""
     
@@ -217,23 +224,31 @@ class TelegramBot:
             
         app = Application.builder().token(self.config.telegram_token).build()
 
-        # Whitelist filter — только эти user_id могут писать боту
-        allowed_ids = _load_allowed_users()
-        if allowed_ids:
-            user_filter = filters.User(user_id=list(allowed_ids))
+        # PUBLIC_BOT=true => без whitelist (для freight-бота клиентов и т.п.)
+        if _is_public_bot():
+            logger.info("PUBLIC_BOT режим: whitelist отключён, бот пускает всех")
+            app.add_handlers([
+                CommandHandler("start", self.handle_start),
+                CommandHandler("help", self.handle_help),
+                CommandHandler("reset", self.handle_reset),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message),
+            ])
         else:
-            # Если whitelist пустой — блокируем всех (никто не пройдёт)
-            user_filter = filters.User(user_id=[-1])
+            # Whitelist filter — только эти user_id могут писать боту
+            allowed_ids = _load_allowed_users()
+            if allowed_ids:
+                user_filter = filters.User(user_id=list(allowed_ids))
+            else:
+                # Если whitelist пустой — блокируем всех (никто не пройдёт)
+                user_filter = filters.User(user_id=[-1])
 
-        # Register handlers — все защищены user_filter
-        app.add_handlers([
-            CommandHandler("start", self.handle_start, filters=user_filter),
-            CommandHandler("help", self.handle_help, filters=user_filter),
-            CommandHandler("reset", self.handle_reset, filters=user_filter),
-            MessageHandler(filters.TEXT & ~filters.COMMAND & user_filter, self.handle_message),
-            # Catch-all для не-whitelist: вежливый отлуп
-            MessageHandler(filters.ALL & ~user_filter, self.handle_unauthorized),
-        ])
+            app.add_handlers([
+                CommandHandler("start", self.handle_start, filters=user_filter),
+                CommandHandler("help", self.handle_help, filters=user_filter),
+                CommandHandler("reset", self.handle_reset, filters=user_filter),
+                MessageHandler(filters.TEXT & ~filters.COMMAND & user_filter, self.handle_message),
+                MessageHandler(filters.ALL & ~user_filter, self.handle_unauthorized),
+            ])
         app.add_error_handler(self.handle_error)
         
         # Setup lifecycle hooks
