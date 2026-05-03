@@ -115,28 +115,20 @@ class AgentFactory:
                 timeout=30,
             )
             fallbacks = []
-            # Fallback #1: Cerebras qwen3-32b (если ключ задан и primary не Cerebras)
-            if cerebras_key and "cerebras" not in openai_base_url:
-                fallbacks.append(ChatOpenAI(
-                    model="qwen-3-32b",
-                    base_url="https://api.cerebras.ai/v1",
-                    api_key=cerebras_key,
-                    timeout=30,
-                ))
-            # Fallback #2: Groq qwen3-32b (если primary не Groq)
-            if groq_key and "groq.com" not in openai_base_url:
-                fallbacks.append(ChatOpenAI(
-                    model="qwen/qwen3-32b",
-                    base_url="https://api.groq.com/openai/v1",
-                    api_key=groq_key,
-                    timeout=30,
-                ))
-            # Fallback #3: llama-3.3-70b на Groq (другой пул TPM)
-            if groq_key:
+            # Fallback #1: Groq llama-3.3-70b (другой пул TPM 12K на Groq)
+            if groq_key and "llama-3.3" not in (llm_model or ""):
                 fallbacks.append(ChatOpenAI(
                     model="llama-3.3-70b-versatile",
                     base_url="https://api.groq.com/openai/v1",
                     api_key=groq_key,
+                    timeout=30,
+                ))
+            # Fallback #2: Cerebras llama3.1-8b (free tier 30 RPM / 60K TPM, last resort)
+            if cerebras_key:
+                fallbacks.append(ChatOpenAI(
+                    model="llama3.1-8b",
+                    base_url="https://api.cerebras.ai/v1",
+                    api_key=cerebras_key,
                     timeout=30,
                 ))
             llm = primary.with_fallbacks(fallbacks) if fallbacks else primary
