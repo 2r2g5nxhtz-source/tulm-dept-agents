@@ -127,6 +127,21 @@ async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg[:4000], parse_mode="Markdown")
 
 
+async def cmd_backup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Запустить pg_dump всех 4 БД на хосте. Авто-cron в 03:00 UTC ежедневно."""
+    if not is_admin(update): return
+    await update.message.reply_text("💾 Запускаю backup всех 4 БД...")
+    result = await run_on_host("/root/backup-pg.sh && tail -10 /root/backups/backup.log")
+    today = (await run_on_host("date +%F")).strip()
+    sizes = await run_on_host(f"ls -lah /root/backups/{today}/ | tail -n +2")
+    msg = (
+        f"✅ *Backup готов:* `/root/backups/{today}/`\n\n"
+        f"*Лог:*\n```\n{result[-800:]}\n```\n"
+        f"*Файлы:*\n```\n{sizes[:600]}\n```"
+    )
+    await update.message.reply_text(msg[:4000], parse_mode="Markdown")
+
+
 async def cmd_me(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Показывает твой chat_id, username и admin-статус. Открыто всем (helper для добавления админов)"""
     u = update.effective_user
@@ -155,12 +170,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🤖 TULM Hetzner Bot\n\n"
         "📊 *Информация:*\n"
         "/status — `docker compose ps`\n"
-        "/health — расширенный health (контейнеры + uptime + диск + RAM)\n"
+        "/health — контейнеры + uptime + диск + RAM\n"
         "/me — мой chat_id и whitelist\n"
         "/logs <бот> — логи 50 строк\n\n"
         "🚀 *Управление:*\n"
         "/deploy — git pull + пересобрать всё\n"
-        "/restart <бот> — перезапуск\n\n"
+        "/restart <бот> — перезапуск\n"
+        "/backup — pg_dump всех 4 БД (auto cron 03:00 UTC)\n\n"
         "🔧 *Произвольные команды:*\n"
         "/sh <cmd> — в контейнере (cwd=/repo)\n"
         "/sh host: <cmd> — на хосте Hetzner\n\n"
@@ -174,6 +190,7 @@ def main():
     app.add_handler(CommandHandler("deploy", cmd_deploy))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("health", cmd_health))
+    app.add_handler(CommandHandler("backup", cmd_backup))
     app.add_handler(CommandHandler("me", cmd_me))
     app.add_handler(CommandHandler("logs", cmd_logs))
     app.add_handler(CommandHandler("restart", cmd_restart))
