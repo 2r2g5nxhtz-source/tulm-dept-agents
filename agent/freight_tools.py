@@ -16,8 +16,16 @@ from langchain_core.tools import tool
 # Когда ГД даст актуальные коридоры (CASCA+, etc.) — добавить сюда.
 _ROUTES: dict = {}
 
-# Документы по странам назначения — оставляем, требования таможни не меняются часто
-_BASE_DOCS = ["Инвойс", "Упаковочный лист", "CMR/коносамент", "Сертификат происхождения"]
+# Документы по типам перевозок (БЕЗ CMR в ЖД!)
+_BASE_DOCS = ["Инвойс", "Упаковочный лист", "Сертификат происхождения"]
+# Транспортный документ зависит от mode перевозки
+_TRANSPORT_DOCS = {
+    "rail":       ["СМГС-накладная (для перевозок ОСЖД)"],
+    "auto":       ["CMR (международная авто-накладная)"],
+    "sea":        ["Bill of Lading (коносамент)"],
+    "air":        ["AWB (авиа-накладная)"],
+    "multimodal": ["FBL (мультимодальный коносамент FIATA) или комбинация СМГС+CMR"],
+}
 _COUNTRY_DOCS = {
     "азербайджан": ["Разрешение ГТК АЗ"],
     "казахстан":   ["Транзитная декларация ЕАЭС"],
@@ -62,13 +70,20 @@ def estimate_cost(cargo_type: str, weight_ton: float, mode: str) -> str:
 
 
 @tool
-def check_required_docs(cargo_type: str, destination_country: str) -> str:
-    """Список обязательных документов для таможенного оформления.
+def check_required_docs(cargo_type: str, destination_country: str, mode: str = "auto") -> str:
+    """Список обязательных документов для оформления перевозки.
     cargo_type: general / bulk / container / hazmat
-    destination_country: страна назначения (азербайджан, турция, иран и т.д.)"""
+    destination_country: страна назначения (азербайджан, турция, иран и т.д.)
+    mode: rail / auto / sea / air / multimodal (определяет транспортный документ —
+          ЖД=СМГС, авто=CMR, морской=коносамент, авиа=AWB)"""
     docs = list(_BASE_DOCS)
+    # Транспортный документ — зависит от mode
+    transport = _TRANSPORT_DOCS.get(mode.strip().lower(), ["Транспортная накладная (уточнит диспетчер)"])
+    docs.extend(transport)
+    # Документы по стране
     extra = _COUNTRY_DOCS.get(destination_country.strip().lower(), [])
     docs.extend(extra)
+    # Опасный груз
     if cargo_type.strip().lower() == "hazmat":
         docs.extend(["MSDS (паспорт безопасности)", "Разрешение на перевозку ОГ (опасный груз)"])
     return "📋 **Документы:** " + ", ".join(docs)
