@@ -173,6 +173,51 @@ def validate_gng_code(code: str) -> str:
 
 
 @tool
+def lookup_vendor_quotes(origin: str, destination: str, cargo: str = "") -> str:
+    """Поиск активных котировок vendor'ов по маршруту в БД ТЛЦТ.
+    Используй ВНУТРЕННЕ при ЖД-заявках — даёт диспетчеру быстрый обзор последних ставок.
+    НЕ показывай конкретные цифры клиенту в ответе!
+
+    origin / destination: точки маршрута (Этрек, Алтынколь, Поти, Туркменбаши и т.д.)
+    cargo: опционально — наименование груза для уточнения"""
+    try:
+        conn = _conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT vendor_name, origin, destination, cargo_name,
+                   price, currency, price_unit, rolling_stock, sps_or_coc,
+                   valid_until, days_left, conditions
+            FROM freight_active_quotes
+            WHERE LOWER(origin) ILIKE LOWER(%s)
+              AND LOWER(destination) ILIKE LOWER(%s)
+              AND (%s = '' OR LOWER(COALESCE(cargo_name,'')) ILIKE LOWER(%s))
+            ORDER BY price ASC
+            LIMIT 5
+        """, (f"%{origin}%", f"%{destination}%", cargo, f"%{cargo}%"))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            return (f"📭 По маршруту {origin}→{destination} активных котировок vendor'ов в БД нет. "
+                    f"Диспетчер запросит свежие у поставщиков.")
+
+        lines = [f"📊 Активные ставки {origin}→{destination} ({len(rows)} шт.) — ВНУТРЕННЯЯ справка, НЕ показывай клиенту:"]
+        for r in rows:
+            valid = f"до {r['valid_until']}" if r['valid_until'] else "без срока"
+            days = f", осталось {r['days_left']}д" if r['days_left'] is not None else ""
+            cargo_str = f" • {r['cargo_name']}" if r['cargo_name'] else ""
+            lines.append(
+                f"• {r['vendor_name']}: {r['price']} {r['price_unit'] or r['currency']}{cargo_str} "
+                f"• {r['rolling_stock'] or '?'} {r['sps_or_coc'] or ''} • {valid}{days}"
+            )
+        lines.append("\n⚠️ Это для ТВОЕГО (бот) понимания диапазона. Клиенту называй только что 'диспетчер рассчитает'.")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"❌ Ошибка поиска котировок: {e}"
+
+
+@tool
 def get_freight_requirements(mode: str) -> str:
     """Получить требования и нюансы по типу перевозки.
     Используй ПЕРЕД сохранением заявки чтобы понять какие критичные поля
