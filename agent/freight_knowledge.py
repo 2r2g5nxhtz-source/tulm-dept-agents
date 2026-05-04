@@ -1,8 +1,16 @@
 """
-TULM Freight knowledge base — критичные требования по типам перевозок.
-Используется ботом для smart-валидации заявок ДО сохранения.
+TULM Freight knowledge base — критичные требования по типам перевозок
++ справочник GNG/HS-кодов (12708 кодов из UIC NHM 2026).
 """
+import os
+import psycopg2
+import psycopg2.extras
 from langchain_core.tools import tool
+
+
+def _conn():
+    """Подключение к БД с GNG-кодами (общий tulm_db, через CRM_DB_URL)."""
+    return psycopg2.connect(os.getenv('CRM_DB_URL') or os.getenv('PG_CONNECTION_STRING'))
 
 
 # Критичные требования по типам перевозок (ТЛЦТ практика)
@@ -72,6 +80,87 @@ _REQUIREMENTS = {
         ],
     },
 }
+
+
+@tool
+def search_gng_code(cargo_description: str) -> str:
+    """Поиск GNG/HS-кода для груза по описанию.
+    GNG (Гармонизированная номенклатура грузов) — обязателен для оформления СМГС-накладной
+    при ЖД перевозках через ОСЖД (Туркменистан, СНГ, Иран, Китай).
+
+    cargo_description: описание груза на английском или русском
+    (например 'steel pipes', 'трубы стальные', 'нефтяной кокс', 'petroleum coke')
+
+    Возвращает 3 наиболее подходящих кода для подтверждения клиентом."""
+    if not cargo_description.strip():
+        return "❌ Опишите груз."
+    try:
+        conn = _conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Trigram similarity на EN+RU описании
+        cur.execute("""
+            SELECT code, level, description_en, description_ru,
+                   GREATEST(
+                       similarity(description_en, %s),
+                       COALESCE(similarity(description_ru, %s), 0)
+                   ) AS sim
+            FROM gng_codes
+            WHERE level >= 4    -- только конкретные коды, не группы
+              AND (description_en %% %s OR description_ru %% %s)
+            ORDER BY sim DESC
+            LIMIT 5
+        """, (cargo_description, cargo_description, cargo_description, cargo_description))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        if not rows:
+            return (f"⚠️ По описанию '{cargo_description}' код GNG не найден.\n"
+                    f"Запроси у клиента точный код от его поставщика, либо "
+                    f"диспетчер уточнит при оформлении СМГС-накладной.")
+        lines = [f"🔍 Возможные коды GNG для '{cargo_description}':\n"]
+        for r in rows:
+            ru = r['description_ru'] or ''
+            ru_part = f" / {ru}" if ru else ""
+            lines.append(f"• `{r['code']}` — {r['description_en']}{ru_part}")
+        lines.append(f"\nПопроси клиента ПОДТВЕРДИТЬ один из кодов или указать свой.")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"❌ Ошибка поиска GNG: {e}"
+
+
+@tool
+def validate_gng_code(code: str) -> str:
+    """Проверить существует ли указанный клиентом GNG-код в справочнике.
+    code: 4-10 цифр (с пробелами или без)"""
+    code_clean = ''.join(c for c in code if c.isdigit())
+    if len(code_clean) < 4:
+        return f"❌ Код должен быть минимум 4 цифры. Получил: '{code}'"
+    try:
+        conn = _conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # Точное совпадение или префикс
+        cur.execute("""
+            SELECT code, description_en, description_ru
+            FROM gng_codes
+            WHERE code = %s OR code LIKE %s
+            ORDER BY LENGTH(code)
+            LIMIT 3
+        """, (code_clean, code_clean + '%'))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        if not rows:
+            # Проверим — может это вообще валидный код но из другого справочника
+            return (f"⚠️ Код {code_clean} не найден в справочнике GNG/HS.\n"
+                    f"Возможные причины: опечатка, или это код ТН ВЭД/ЕТСНГ (не GNG).\n"
+                    f"Уточни у клиента источник кода.")
+        lines = [f"✅ Код найден:"]
+        for r in rows:
+            ru = f" / {r['description_ru']}" if r['description_ru'] else ""
+            lines.append(f"• `{r['code']}` — {r['description_en']}{ru}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"❌ Ошибка проверки: {e}"
 
 
 @tool

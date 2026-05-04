@@ -23,7 +23,7 @@ from agent.railway_tools import add_trk_code, revoke_trk_code, get_aswak_stats, 
 from agent.maritime_tools import (get_maritime_receivables, update_maritime_receivable_status, add_maritime_receivable, add_balkansk_operation, sync_balkansk_operations, get_balkansk_list, add_container, update_container_status, get_container_list, get_container_stats, calculate_port_service, calculate_storage_fee, calculate_container_handling, calculate_bl_fee, add_voyage, get_voyage_report, get_maritime_summary)
 from agent.freight_tools import check_route_feasibility, estimate_cost, check_required_docs
 from agent.freight_crm_tools import register_client, save_freight_request, find_similar_requests
-from agent.freight_knowledge import get_freight_requirements
+from agent.freight_knowledge import get_freight_requirements, search_gng_code, validate_gng_code
 
 _DEPT_PROMPTS = {
     "finance": FINANCE_SYSTEM_PROMPT,
@@ -55,6 +55,8 @@ _DEPT_TOOLS = {
         save_freight_request,        # обязательный — сохраняет заявку в БД
         check_required_docs,         # список документов по стране назначения
         get_freight_requirements,    # требования по типу перевозки (GNG/ADR/упаковочный)
+        search_gng_code,             # поиск GNG-кода по описанию груза (12708 кодов в БД)
+        validate_gng_code,           # проверка GNG-кода если клиент дал свой
     ],
 }
 
