@@ -101,6 +101,8 @@ def save_freight_request(
     cargo_type: str = "general",
     incoterms: str = "",
     pickup_date: str = "",
+    gng_code: str = "",
+    gng_confirmed: bool = False,
 ) -> str:
     """Сохранить фрахтовую заявку в БД ТЛЦТ.
     ВСЕГДА передавай source_chat_id — это ID отправителя в Telegram (нужен для дедупликации).
@@ -151,17 +153,23 @@ def save_freight_request(
 
         # 3. Создать заявку
         pd = pickup_date.strip() if pickup_date else None
+        # GNG-код только если 4-10 цифр (отбрасываем мусор)
+        gng_clean = ''.join(c for c in (gng_code or '') if c.isdigit())
+        if gng_clean and not (4 <= len(gng_clean) <= 10):
+            gng_clean = None
         cur.execute("""
             INSERT INTO freight_requests (
                 client_id, source, source_chat_id, raw_message,
                 origin, destination, destination_country,
                 mode, cargo_type, cargo_description, weight_ton,
-                incoterms, pickup_date, status
+                incoterms, pickup_date, status,
+                gng_code, gng_confirmed
             ) VALUES (
                 %s, 'telegram', %s, %s,
                 %s, %s, %s,
                 %s, %s, %s, %s,
-                %s, %s, 'new'
+                %s, %s, 'new',
+                %s, %s
             )
             RETURNING id, created_at
         """, (
@@ -170,6 +178,7 @@ def save_freight_request(
             mode.strip().lower() or 'unknown', cargo_type.strip().lower() or 'general',
             cargo_description.strip() or None, weight_ton or None,
             incoterms.strip().upper() or None, pd,
+            gng_clean or None, bool(gng_confirmed),
         ))
         req = cur.fetchone()
         conn.commit()

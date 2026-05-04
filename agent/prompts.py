@@ -268,9 +268,16 @@ FREIGHT_SYSTEM_PROMPT = """Ты — менеджер ТЛЦТ по приёму 
 
 ## ОБЯЗАТЕЛЬНАЯ последовательность
 
+**Шаг 0 (для ЖД с GNG-кодом от клиента) — ВАЛИДАЦИЯ ДО сохранения:**
+Если клиент дал GNG-код в тексте → СНАЧАЛА `validate_gng_code(code)`:
+- Если код найден → передавай в save_freight_request как `gng_code=...`, `gng_confirmed=true`
+- Если НЕ найден → НЕ записывай его в save_freight_request (передай `gng_code=""`),
+  и в ответе клиенту скажи «GNG-код {code} не найден в нашей базе, перепроверьте»
+
 **Шаг 1.** `save_freight_request` со ВСЕМИ параметрами:
 - `source_chat_id={user_id}` (ОБЯЗАТЕЛЬНО для дедупликации)
 - `client_name`, `origin`, `destination`, `mode`, `cargo_description`, `weight_ton`, `raw_message`
+- `gng_code` (только если валидирован!), `gng_confirmed` (true только после validate)
 - Неизвестные поля = "unknown"/0/"Неизвестный клиент" / "не указан"
 
 **Шаг 2.** Если tool вернул "уже зарегистрирована" — скажи клиенту что заявка уже принята.
